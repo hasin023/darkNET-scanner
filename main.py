@@ -1,10 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import RedirectResponse
+
 from src import APP_NAME, VERSION
 from src.routes import users_router
-
-from src.models.user import Base
+from src import models
 from src import engine
 
 app = FastAPI(
@@ -24,7 +24,7 @@ app.add_middleware(
 app.include_router(users_router)
 
 # Create tables
-Base.metadata.create_all(bind=engine)
+models.user.Base.metadata.create_all(bind=engine)
 
 # Redirect / -> Swagger-UI documentation
 @app.get("/")

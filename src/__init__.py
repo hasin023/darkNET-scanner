@@ -7,6 +7,9 @@ from .config.config import (
     DB_HOST,
     DB_NAME,
     DB_URI,
+    SECRET_KEY,
+    ALGORITHM,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
 )
 
 from .config.database import (
@@ -26,5 +29,8 @@ __all__ = [
     'DB_URI',
     'engine',
     'SessionLocal',
-    'get_db'
+    'get_db',
+    'SECRET_KEY',
+    'ALGORITHM',
+    'ACCESS_TOKEN_EXPIRE_MINUTES',
 ]
