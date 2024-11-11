@@ -4,6 +4,9 @@ from starlette.responses import RedirectResponse
 from src import APP_NAME, VERSION
 from src.routes import users_router
 
+from src.models.user import Base
+from src import engine
+
 app = FastAPI(
     title=APP_NAME,
     version=VERSION
@@ -20,6 +23,8 @@ app.add_middleware(
 # Include all routers
 app.include_router(users_router)
 
+# Create tables
+Base.metadata.create_all(bind=engine)
 
 # Redirect / -> Swagger-UI documentation
 @app.get("/")

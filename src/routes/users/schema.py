@@ -1,14 +1,16 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 class UserBase(BaseModel):
     username: str
-    email: str
+    email: EmailStr
+    role: str = "tester"
 
 class UserCreate(UserBase):
     password: str
 
 class User(UserBase):
-    id: int
-    
+    user_id: int
+    verified: bool = False
+
     class Config:
         from_attributes = True
