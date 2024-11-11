@@ -1,7 +1,9 @@
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session
+from typing import Union
 from datetime import datetime, timedelta, timezone
 
 from .schema import UserCreate
@@ -39,21 +41,29 @@ class UserController:
             )
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = await UserController.create_access_token(
-            data={"sub": user.username},
+            data={"sub": user.username, "role": user.role},
             expires_delta=access_token_expires
         )
         return {"access_token": access_token, "token_type": "bearer"}
 
     @staticmethod
-    async def verify_token(token: str = Depends(oauth2_scheme)) -> str:
+    async def verify_token(request: Request, db: Session = Depends(get_db)):
         try:
+            token = request.headers.get("Authorization")
+            if not token:
+                raise HTTPException(status_code=401, detail="No token provided")
+            token = token.split()[1]
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             username: str = payload.get("sub")
-            if username is None:
-                raise HTTPException(status_code=400, detail="Invalid token")
+            role: str = payload.get("role")
+            if username is None or role is None:
+                raise HTTPException(status_code=401, detail="Invalid token")
+            user = db.query(UserModel).filter(UserModel.username == username).first()
+            if not user or user.role != role:
+                raise HTTPException(status_code=403, detail="Unauthorized")
+            return user
         except JWTError:
-            raise HTTPException(status_code=400, detail="Invalid token")
-        return username
+            raise HTTPException(status_code=401, detail="Invalid token")
     
     @staticmethod
     async def get_user_profile(token: str, db: Session):
@@ -99,15 +109,65 @@ class UserController:
             db.rollback()
             raise HTTPException(status_code=500, detail=str(e))
         
+    # Admin login
+    @staticmethod
+    async def admin_login(username: str, password: str, db: Session = Depends(get_db)):
+        user = db.query(UserModel).filter(UserModel.username == username).first()
+        if not user or user.password != password or not user.role == "admin":
+            raise HTTPException(status_code=400, detail="Incorrect username, password or user is not an admin")
+        access_token = await UserController.create_access_token(data={"sub": user.username})
+        response = JSONResponse(content={"message": "Logged in successfully", "access_token": access_token})
+        response.set_cookie(key="session-token", value=access_token, httponly=True)
+        return response
+    
+    @staticmethod
+    async def admin_logout(response: Response):
+        response.delete_cookie("session-token")
+        return {"message": "Admin logged out successfully"}
+
+    @staticmethod
+    async def create_access_token(data: dict, expires_delta: Union[timedelta, None] = None):
+        to_encode = data.copy()
+        if expires_delta:
+            expire = datetime.now(timezone.utc) + expires_delta
+        else:
+            expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        to_encode.update({"exp": expire})
+        encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        return encoded_jwt
+
+    @staticmethod
+    async def get_auth_user(request: Request, db: Session = Depends(get_db)):
+        try:
+            token = request.cookies.get("session-token")
+            if not token:
+                raise HTTPException(status_code=401, detail="No token provided")
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+            username: str = payload.get("sub")
+            if username is None:
+                raise HTTPException(status_code=401, detail="Invalid token")
+            user = db.query(UserModel).filter(UserModel.username == username).first()
+            if not user or not user.role == "admin":
+                raise HTTPException(status_code=403, detail="Unauthorized")
+            return user
+        except JWTError:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        
         
     @staticmethod
-    async def get_users(db: Session = Depends(get_db)):
+    async def get_users(request: Request, db: Session = Depends(get_db)):
+        user = await UserController.get_auth_user(request, db)
+        if not user or user.role != "admin":
+            raise HTTPException(status_code=403, detail="Unauthorized")
         users = db.query(UserModel).all()
         return users
 
     @staticmethod
-    async def get_user(user_id: int, db: Session = Depends(get_db)):
-        user = db.query(UserModel).filter(UserModel.user_id == user_id).first()
-        if not user:
+    async def get_user(request: Request, username: str, db: Session = Depends(get_db)):
+        user = await UserController.get_auth_user(request, db)
+        if not user or user.role != "admin":
+            raise HTTPException(status_code=403, detail="Unauthorized")
+        user_obj = db.query(UserModel).filter(UserModel.username == username).first()
+        if not user_obj:
             raise HTTPException(status_code=404, detail="User not found")
-        return user
+        return user_obj

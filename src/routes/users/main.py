@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from fastapi.security import OAuth2PasswordRequestForm
 
@@ -15,6 +15,7 @@ router = APIRouter(
 async def register(user: UserCreate, db: Session = Depends(get_db)):
     return await UserController.create_user(user, db)
 
+# Token based User login
 @router.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     return await UserController.login_for_access_token(form_data, db)
@@ -29,10 +30,20 @@ async def profile(request: Request, db: Session = Depends(get_db)):
     
     return await UserController.get_user_profile(token, db)
 
-@router.get("/", response_model=list[User])
-async def get_users(db: Session = Depends(get_db)):
-    return await UserController.get_users(db)
 
-@router.get("/{user_id}", response_model=User)
-async def get_user(user_id: int, db: Session = Depends(get_db)):
-    return await UserController.get_user(user_id, db)
+# Session based Admin login and authorization
+@router.post("/admin/login", status_code=200)
+async def admin_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    return await UserController.admin_login(form_data.username, form_data.password, db)
+
+@router.get("/", response_model=list[User], dependencies=[Depends(UserController.get_auth_user)])
+async def get_users(request: Request, db: Session = Depends(get_db)):
+    return await UserController.get_users(request, db)
+
+@router.get("/{username}", response_model=User, dependencies=[Depends(UserController.get_auth_user)])
+async def get_user(request: Request, username: str, db: Session = Depends(get_db)):
+    return await UserController.get_user(request, username, db)
+
+@router.post("/admin/logout", status_code=200)
+async def admin_logout(response: Response):
+    return await UserController.admin_logout(response)
