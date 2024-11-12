@@ -36,6 +36,10 @@ async def profile(request: Request, db: Session = Depends(get_db)):
 async def admin_login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     return await UserController.admin_login(form_data.username, form_data.password, db)
 
+@router.get("/admin/profile", response_model=User, dependencies=[Depends(UserController.get_auth_user)])
+async def admin_profile(request: Request, db: Session = Depends(get_db)):
+    return await UserController.get_admin_profile(request, db)
+
 @router.get("/", response_model=list[User], dependencies=[Depends(UserController.get_auth_user)])
 async def get_users(request: Request, db: Session = Depends(get_db)):
     return await UserController.get_users(request, db)

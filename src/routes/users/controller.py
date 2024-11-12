@@ -83,15 +83,12 @@ class UserController:
 
     @staticmethod
     async def create_user(user: UserCreate, db: Session = Depends(get_db)):
-        # Check if username exists
+        
         if db.query(UserModel).filter(UserModel.username == user.username).first():
             raise HTTPException(status_code=400, detail="Username already registered")
-        
-        # Check if email exists
         if db.query(UserModel).filter(UserModel.email == user.email).first():
             raise HTTPException(status_code=400, detail="Email already registered")
         
-        # Create new user
         db_user = UserModel(
             username=user.username,
             email=user.email,
@@ -119,6 +116,11 @@ class UserController:
         response = JSONResponse(content={"message": "Logged in successfully", "access_token": access_token})
         response.set_cookie(key="session-token", value=access_token, httponly=True)
         return response
+    
+    @staticmethod
+    async def get_admin_profile(request: Request, db: Session = Depends(get_db)):
+        user = await UserController.get_auth_user(request, db)
+        return user
     
     @staticmethod
     async def admin_logout(response: Response):
