@@ -1,4 +1,6 @@
 import json
+import xmltojson
+import subprocess
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from src.models.scan import ScanModel
@@ -64,11 +66,37 @@ class ScanController:
     @staticmethod
     async def run_port_scan(scan: ScanModel, db: Session):
         """
-        Run a port scan with elevated privileges.
+        Run a port scan using Nmap and update the scan results.
         """
         try:
-            # Placeholder for Port scan logic
-            scan.results = json.dumps({"message": "Port scan results"})  # Save as string in DB
+            command = ["nmap", "-p1-1024", "-oX", "-", scan.target_ip]
+            output = subprocess.check_output(command, universal_newlines=True)
+            outputJson = xmltojson.parse(output)
+            nmap_data = json.loads(outputJson)
+            
+            scanner = nmap_data["nmaprun"]["@scanner"]
+            args = nmap_data["nmaprun"]["@args"]
+            start_time = nmap_data["nmaprun"]["@startstr"]
+            num_services = nmap_data["nmaprun"]["scaninfo"]["@numservices"]
+            num_hosts_up = nmap_data["nmaprun"]["runstats"]["hosts"]["@up"]
+            num_hosts_down = nmap_data["nmaprun"]["runstats"]["hosts"]["@down"]
+            num_hosts_total = nmap_data["nmaprun"]["runstats"]["hosts"]["@total"]
+            scan_duration = nmap_data["nmaprun"]["runstats"]["finished"]["@elapsed"]
+            scan_status = nmap_data["nmaprun"]["runstats"]["finished"]["@exit"]
+                        
+            port_results = {
+                "scanner": scanner,
+                "args": args,
+                "start_time": start_time,
+                "num_services": num_services,
+                "num_hosts_up": num_hosts_up,
+                "num_hosts_down": num_hosts_down,
+                "num_hosts_total": num_hosts_total,
+                "scan_duration": scan_duration,
+                "scan_status": scan_status,
+            }
+
+            scan.results = json.dumps(port_results)
             scan.status = "completed"
             scan.end_time = datetime.now(timezone.utc)
             db.commit()
