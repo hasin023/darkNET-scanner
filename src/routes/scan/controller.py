@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from src.models.scan import ScanModel
 from .schema import ScanCreate, ScanUpdate, ScanResponse
 from datetime import datetime, timezone
+from src.core import web_scanner
 
 class ScanController:
     
@@ -111,9 +112,11 @@ class ScanController:
         """
         Run a web scan and update the scan results.
         """
-        try:
-            # Placeholder for web scan logic
-            scan.results = json.dumps({"message": "Web scan results"})  # Save as string in DB
+        try:            
+            scanner = web_scanner.VulnerabilityScanner()
+            scanner.scan(scan.target_ip)
+            
+            scan.results = scanner.report_vulnerabilities()
             scan.status = "completed"
             scan.end_time = datetime.now(timezone.utc)
             db.commit()
