@@ -11,7 +11,7 @@ from src.core import web_scanner
 class ScanController:
     
     @staticmethod
-    async def create_scan(scan_data: ScanCreate, db: Session):
+    async def  create_scan(scan_data: ScanCreate, db: Session):
         """
         Create a new scan.
         """
