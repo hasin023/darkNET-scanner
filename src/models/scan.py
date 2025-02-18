@@ -7,6 +7,7 @@ Base = declarative_base()
 
 class ScanModel(Base):
     __tablename__ = "scans"
+    
     scan_id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer)
     target_ip = Column(String)

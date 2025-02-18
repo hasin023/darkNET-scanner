@@ -143,7 +143,7 @@ class UserController:
         try:
             token = request.cookies.get("session-token")
             if not token:
-                raise HTTPException(status_code=401, detail="No token provided")
+                raise HTTPException(status_code=401, detail="User not Authenticated")
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             username: str = payload.get("sub")
             if username is None:
