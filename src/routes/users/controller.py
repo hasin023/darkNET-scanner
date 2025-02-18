@@ -41,7 +41,7 @@ class UserController:
             )
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = await UserController.create_access_token(
-            data={"sub": user.username, "role": user.role},
+            data={"user": user.username, "role": user.role},
             expires_delta=access_token_expires
         )
         return {"access_token": access_token, "token_type": "bearer"}
@@ -54,7 +54,7 @@ class UserController:
                 raise HTTPException(status_code=401, detail="No token provided")
             token = token.split()[1]
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            username: str = payload.get("sub")
+            username: str = payload.get("user")
             role: str = payload.get("role")
             if username is None or role is None:
                 raise HTTPException(status_code=401, detail="Invalid token")
@@ -69,7 +69,7 @@ class UserController:
     async def get_user_profile(token: str, db: Session):
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            username = payload.get("sub")
+            username = payload.get("user")
             if username is None:
                 raise HTTPException(status_code=401, detail="Invalid token")
         except jwt.JWTError:
@@ -112,7 +112,7 @@ class UserController:
         user = db.query(UserModel).filter(UserModel.username == username).first()
         if not user or user.password != password or not user.role == "admin":
             raise HTTPException(status_code=400, detail="Incorrect username, password or user is not an admin")
-        access_token = await UserController.create_access_token(data={"sub": user.username})
+        access_token = await UserController.create_access_token(data={"user": user.username})
         response = JSONResponse(content={"message": "Logged in successfully", "access_token": access_token})
         response.set_cookie(key="session-token", value=access_token, httponly=True)
         return response
@@ -145,7 +145,7 @@ class UserController:
             if not token:
                 raise HTTPException(status_code=401, detail="User not Authenticated")
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            username: str = payload.get("sub")
+            username: str = payload.get("user")
             if username is None:
                 raise HTTPException(status_code=401, detail="Invalid token")
             user = db.query(UserModel).filter(UserModel.username == username).first()
