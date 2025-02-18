@@ -68,7 +68,21 @@ class VulnerabilityScanner:
 
     def scan_weak_passwords(self):
         usernames = ["admin", "root"]
-        passwords = ["admin", "password", "123456"]
+        passwords = [
+            "admin",
+            "root", 
+            "password", 
+            "123456", 
+            "password123",
+            "12345678",
+            "qwerty",
+            "admin123",
+            "root123",
+            "adminadmin",
+            "rootroot",
+            "111111",
+            "123123",
+            ]
         for username in usernames:
             for password in passwords:
                 response = requests.post(self.target_url + "/login", data={"username": username, "password": password})

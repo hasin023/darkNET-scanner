@@ -1,4 +1,7 @@
+import asyncio
 import json
+import secrets
+import requests
 import xmltojson
 import subprocess
 from fastapi import HTTPException
@@ -130,10 +133,162 @@ class ScanController:
     async def run_auth_test(scan: ScanModel, db: Session):
         """
         Run an authentication test and update the scan results.
+        Tests password strength, session security, and brute force protection.
         """
         try:
-            # Placeholder for auth test logic
-            scan.results = json.dumps({"message": "Authentication test results"})  # Save as string in DB
+            target_url = scan.target_ip.rstrip('/')  # Remove trailing slash if present
+            results = {
+                "target_url": target_url,
+                "issues": [],
+                "details": {
+                    "password_policy": {},
+                    "session_security": {},
+                    "brute_force": {}
+                }
+            }
+
+            # 1. Test Password Policy
+            test_passwords = [
+                {"password": "short", "expected_issues": ["length"]},
+                {"password": "password123", "expected_issues": ["common", "uppercase"]},
+                {"password": "abcdefgh", "expected_issues": ["number", "uppercase"]},
+                {"password": "12345678", "expected_issues": ["letter", "uppercase"]}
+            ]
+            
+            password_requirements = {
+                "min_length": False,
+                "uppercase": False,
+                "numbers": False,
+                "special_chars": False,
+                "prevents_common": False
+            }
+
+            try:
+                for test in test_passwords:
+                    register_response = requests.post(
+                        f"{target_url}/register",
+                        json={
+                            "username": f"test_user_{secrets.token_hex(4)}",
+                            "email": f"test_{secrets.token_hex(4)}@example.com",
+                            "password": test["password"]
+                        },
+                        timeout=10,
+                        verify=False  # Allow self-signed certificates
+                    )
+                    
+                    error_msg = register_response.text.lower()
+                    
+                    # Enhanced pattern matching
+                    if any(phrase in error_msg for phrase in ["length", "too short", "minimum"]):
+                        password_requirements["min_length"] = True
+                    if any(phrase in error_msg for phrase in ["uppercase", "capital"]):
+                        password_requirements["uppercase"] = True
+                    if any(phrase in error_msg for phrase in ["number", "digit"]):
+                        password_requirements["numbers"] = True
+                    if any(phrase in error_msg for phrase in ["special", "symbol"]):
+                        password_requirements["special_chars"] = True
+                    if any(phrase in error_msg for phrase in ["common", "weak", "dictionary"]):
+                        password_requirements["prevents_common"] = True
+
+                results["details"]["password_policy"] = {
+                    "requirements": password_requirements,
+                    "missing_requirements": [k for k, v in password_requirements.items() if not v]
+                }
+                
+                if results["details"]["password_policy"]["missing_requirements"]:
+                    results["issues"].append("Weak password policy detected")
+                    
+            except requests.RequestException as e:
+                results["issues"].append(f"Password policy test failed: {str(e)}")
+
+            # 2. Test Session Security
+            try:
+                login_response = requests.post(
+                    f"{target_url}/login",
+                    json={
+                        "username": "test_user",
+                        "password": "Test123!@#"
+                    },
+                    timeout=10,
+                    verify=False,
+                    allow_redirects=True
+                )
+                
+                session_security = {
+                    "secure_flag": False,
+                    "httponly_flag": False,
+                    "samesite": False,
+                    "session_timeout": False
+                }
+
+                if login_response.cookies:
+                    for cookie in login_response.cookies:
+                        if cookie.name.lower() in ['session', 'sessionid', 'token', 'auth']:
+                            session_security["secure_flag"] = cookie.secure
+                            session_security["httponly_flag"] = cookie.has_nonstandard_attr('HttpOnly')
+                            session_security["samesite"] = any(
+                                attr.lower() == 'samesite' 
+                                for attr in cookie._rest.keys()
+                            )
+
+                    results["details"]["session_security"] = session_security
+                    
+                    # Check for missing security flags
+                    missing_flags = [k for k, v in session_security.items() if not v]
+                    if missing_flags:
+                        results["issues"].append(
+                            f"Session cookie missing security flags: {', '.join(missing_flags)}"
+                        )
+
+                # Check for JWT in Authorization header
+                auth_header = login_response.headers.get('Authorization')
+                if auth_header and auth_header.startswith('Bearer '):
+                    results["details"]["session_security"]["jwt_used"] = True
+                    
+            except requests.RequestException as e:
+                results["issues"].append(f"Session security test failed: {str(e)}")
+
+            # 3. Test Brute Force Protection
+            try:
+                attempt_count = 0
+                max_attempts = 7  # Increased attempts to better detect rate limiting
+                
+                for i in range(max_attempts):
+                    response = requests.post(
+                        f"{target_url}/login",
+                        json={
+                            "username": "test_user",
+                            "password": f"wrong_password_{i}"
+                        },
+                        timeout=5,
+                        verify=False
+                    )
+                    attempt_count += 1
+
+                    # Check for rate limiting or account lockout
+                    if response.status_code in [429, 423]:  # Too Many Requests or Locked
+                        results["details"]["brute_force"] = {
+                            "protection": "Implemented",
+                            "threshold": attempt_count,
+                            "type": "Rate limiting" if response.status_code == 429 else "Account lockout"
+                        }
+                        break
+                    
+                    # Add small delay between attempts
+                    await asyncio.sleep(0.5)
+                
+                if attempt_count == max_attempts:
+                    results["issues"].append("No brute force protection detected")
+                    results["details"]["brute_force"] = {
+                        "protection": "Not implemented",
+                        "attempts_allowed": f"More than {max_attempts}"
+                    }
+                    
+            except requests.RequestException as e:
+                results["issues"].append(f"Brute force protection test failed: {str(e)}")
+
+            # Update scan with final results
+            scan.results = json.dumps(results)
             scan.status = "completed"
             scan.end_time = datetime.now(timezone.utc)
             db.commit()
@@ -141,4 +296,7 @@ class ScanController:
             scan.status = "failed"
             scan.end_time = datetime.now(timezone.utc)
             db.commit()
-            raise HTTPException(status_code=400, detail=str(e))
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Authentication test failed: {str(e)}"
+            )
