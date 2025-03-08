@@ -57,3 +57,17 @@ CREATE TABLE SCANS (
     END_TIME TIMESTAMP WITH TIME ZONE,
     RESULTS JSON
 );
+
+CREATE TABLE reports (
+    report_id SERIAL PRIMARY KEY,
+    scan_id INTEGER REFERENCES scans(scan_id),
+    user_id INTEGER,
+    generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    report_title TEXT,
+    report_summary TEXT,
+    severity_level TEXT,
+    recommendations JSONB,
+    details JSONB
+);
+
+CREATE INDEX idx_reports_report_id ON reports(report_id);
